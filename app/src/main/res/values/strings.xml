@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Adorn — Women\'s Luxury Wardrobe</string>
+    <string name="file_provider_authority">com.adorn.wardrobe.fileprovider</string>
+</resources>
