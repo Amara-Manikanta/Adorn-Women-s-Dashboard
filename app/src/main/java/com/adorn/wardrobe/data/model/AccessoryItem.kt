@@ -83,8 +83,17 @@ data class AccessoryItem(
     val targetPrice: Double = 0.0,
     val storeUrl: String = "",
     val timesWorn: Int = 0,
-    val lastWornDate: Long = 0L
+    val lastWornDate: Long = 0L,
+    val cutoutUri: String = "",
+    val dominantColorHex: String = "",
+    val accentColorHex: String = "",
+    val colorName: String = ""
 ) {
+    val hasCutout: Boolean
+        get() = cutoutUri.isNotBlank()
+
+    val displayImageUri: String
+        get() = if (hasCutout) cutoutUri else primaryImageUri
     val hasStoreLink: Boolean
         get() = storeUrl.isNotBlank()
 

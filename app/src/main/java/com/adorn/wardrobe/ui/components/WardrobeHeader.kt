@@ -67,6 +67,8 @@ fun WardrobeHeader(
     onSelectAll: () -> Unit = {},
     onClearSelection: () -> Unit = {},
     onRemoveDuplicates: () -> Unit = {},
+    onExportBackup: () -> Unit = {},
+    onRestoreBackup: () -> Unit = {},
     title: String = "Adorn",
     subtitle: String = "Your Luxury Wardrobe & Jewelry Box"
 ) {
@@ -365,6 +367,34 @@ fun WardrobeHeader(
                             onClick = {
                                 moreMenuExpanded = false
                                 onRemoveDuplicates()
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("💾", fontSize = 16.sp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Export .adorn Backup", fontWeight = FontWeight.Medium)
+                                }
+                            },
+                            onClick = {
+                                moreMenuExpanded = false
+                                onExportBackup()
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("📥", fontSize = 16.sp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Restore .adorn Backup", fontWeight = FontWeight.Medium)
+                                }
+                            },
+                            onClick = {
+                                moreMenuExpanded = false
+                                onRestoreBackup()
                             }
                         )
                     }

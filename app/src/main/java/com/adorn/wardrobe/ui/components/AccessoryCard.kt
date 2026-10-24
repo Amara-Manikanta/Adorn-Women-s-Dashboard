@@ -96,9 +96,9 @@ fun AccessoryCard(
                     .fillMaxWidth()
                     .aspectRatio(1f)
                     .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                    .background(Color(0xFFF9F3F4))
+                    .background(if (item.hasCutout) Color(0xFFFBF4F5) else Color(0xFFF9F3F4))
             ) {
-                val primaryPath = item.primaryImageUri
+                val primaryPath = if (item.hasCutout) item.cutoutUri else item.primaryImageUri
                 val imageModel = if (primaryPath.startsWith("/")) {
                     File(primaryPath)
                 } else if (primaryPath.isNotBlank()) {
@@ -109,8 +109,10 @@ fun AccessoryCard(
                     AsyncImage(
                         model = imageModel,
                         contentDescription = item.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+                        contentScale = if (item.hasCutout) ContentScale.Fit else ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(if (item.hasCutout) 8.dp else 0.dp)
                     )
                 } else {
                     // Fallback elegant placeholder

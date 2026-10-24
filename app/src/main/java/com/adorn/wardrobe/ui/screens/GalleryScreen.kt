@@ -76,6 +76,8 @@ fun GalleryScreen(
     onSelectToggle: (AccessoryItem) -> Unit,
     onDeleteSelected: () -> Unit,
     onRemoveDuplicates: () -> Unit,
+    onExportBackup: () -> Unit = {},
+    onRestoreBackup: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
@@ -105,6 +107,8 @@ fun GalleryScreen(
                     onSelectAll = onSelectAll,
                     onClearSelection = onClearSelection,
                     onRemoveDuplicates = onRemoveDuplicates,
+                    onExportBackup = onExportBackup,
+                    onRestoreBackup = onRestoreBackup,
                     title = "Adorn",
                     subtitle = "Your Luxury Wardrobe & Jewelry Box"
                 )

@@ -20,7 +20,8 @@ data class SuggestedLook(
     val matchedItems: List<AccessoryItem>,
     val harmonyScore: Int = 98,
     val metalPalette: String = "Gold & Diamonds",
-    val anchorClothing: AccessoryItem? = null
+    val anchorClothing: AccessoryItem? = null,
+    val colorHarmonyBadge: String = "✨ Harmonious Pairing"
 )
 
 /**
@@ -150,13 +151,32 @@ class SmartStylistService : JewelrySuggestionApiService {
             "Curated ${request.occasion} Ensemble"
         }
 
+        // On-Device Local Color Theory Harmony Analysis
+        val colorEval = com.adorn.wardrobe.ml.LocalColorMatcher.evaluateOutfitHarmony(
+            anchorClothing,
+            curatedList.filter { it.id != anchorClothing?.id }
+        )
+
+        val combinedAdvice = if (anchorClothing?.dominantColorHex?.isNotBlank() == true) {
+            "$stylistAdvice\n\n🎨 Color Harmony (${colorEval.harmonyType.title}): ${colorEval.explanation}"
+        } else {
+            stylistAdvice
+        }
+
+        val calculatedScore = if (anchorClothing?.dominantColorHex?.isNotBlank() == true) {
+            ((colorEval.score + (if (curatedList.size >= 4) 98 else if (curatedList.size >= 2) 92 else 85)) / 2)
+        } else {
+            if (curatedList.size >= 4) 98 else if (curatedList.size >= 2) 92 else 85
+        }
+
         return SuggestedLook(
             lookTitle = title,
-            stylistAdvice = stylistAdvice,
+            stylistAdvice = combinedAdvice,
             matchedItems = curatedList,
-            harmonyScore = if (curatedList.size >= 4) 98 else if (curatedList.size >= 2) 92 else 85,
+            harmonyScore = calculatedScore,
             metalPalette = curatedList.map { it.metal.shortTag }.distinct().joinToString(" + "),
-            anchorClothing = anchorClothing
+            anchorClothing = anchorClothing,
+            colorHarmonyBadge = colorEval.harmonyType.badge
         )
     }
 }

@@ -91,8 +91,8 @@ fun DetailBottomSheet(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 32.dp)
         ) {
-            // Header with image / multi-image pager
-            val photos = item.imageUris.filter { it.isNotBlank() }
+            // Header with image / multi-image pager (includes transparent cutout if generated)
+            val photos = (listOfNotNull(if (item.hasCutout) item.cutoutUri else null) + item.imageUris).filter { it.isNotBlank() }.distinct()
             val pagerState = rememberPagerState(pageCount = { if (photos.isNotEmpty()) photos.size else 1 })
 
             Box(
@@ -295,6 +295,58 @@ fun DetailBottomSheet(
                                         color = Color(0xFF332028)
                                     )
                                 }
+                            }
+                        }
+                    }
+                }
+
+                if (item.hasCutout || item.dominantColorHex.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (item.dominantColorHex.isNotBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color(0xFFFBF4F6),
+                                border = BorderStroke(1.dp, Color(0xFFE8D0D5))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                try {
+                                                    Color(android.graphics.Color.parseColor(item.dominantColorHex))
+                                                } catch (e: Exception) { RoseGoldPrimary }
+                                            )
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = item.colorName.ifBlank { "Analyzed Color" },
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = Color(0xFF381F2A)
+                                    )
+                                }
+                            }
+                        }
+
+                        if (item.hasCutout) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color(0xFFE8F5E9)
+                            ) {
+                                Text(
+                                    text = "✨ LiteRT Cutout",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = Color(0xFF2E7D32),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
                             }
                         }
                     }

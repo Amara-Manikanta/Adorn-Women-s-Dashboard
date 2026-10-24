@@ -79,6 +79,8 @@ fun WishlistScreen(
     onDeleteSelected: () -> Unit,
     onMoveSelectedToWardrobe: () -> Unit,
     onRemoveDuplicates: () -> Unit,
+    onExportBackup: () -> Unit = {},
+    onRestoreBackup: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
@@ -108,6 +110,8 @@ fun WishlistScreen(
                     onSelectAll = onSelectAll,
                     onClearSelection = onClearSelection,
                     onRemoveDuplicates = onRemoveDuplicates,
+                    onExportBackup = onExportBackup,
+                    onRestoreBackup = onRestoreBackup,
                     title = "Wishlist",
                     subtitle = "Target Acquisitions & High-End Upgrades"
                 )

@@ -16,7 +16,7 @@ class AccessoryDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
 
     companion object {
         private const val DATABASE_NAME = "wardrobe.db"
-        private const val DATABASE_VERSION = 6
+        private const val DATABASE_VERSION = 7
 
         const val TABLE_ACCESSORIES = "accessories"
         const val COLUMN_ID = "_id"
@@ -43,6 +43,10 @@ class AccessoryDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         const val COLUMN_STORE_URL = "store_url"
         const val COLUMN_TIMES_WORN = "times_worn"
         const val COLUMN_LAST_WORN_DATE = "last_worn_date"
+        const val COLUMN_CUTOUT_URI = "cutout_uri"
+        const val COLUMN_DOMINANT_COLOR = "dominant_color"
+        const val COLUMN_ACCENT_COLOR = "accent_color"
+        const val COLUMN_COLOR_NAME = "color_name"
 
         // Trips Table
         const val TABLE_TRIPS = "trips"
@@ -89,7 +93,11 @@ class AccessoryDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
                 $COLUMN_TARGET_PRICE REAL DEFAULT 0.0,
                 $COLUMN_STORE_URL TEXT DEFAULT '',
                 $COLUMN_TIMES_WORN INTEGER NOT NULL DEFAULT 0,
-                $COLUMN_LAST_WORN_DATE INTEGER DEFAULT 0
+                $COLUMN_LAST_WORN_DATE INTEGER DEFAULT 0,
+                $COLUMN_CUTOUT_URI TEXT DEFAULT '',
+                $COLUMN_DOMINANT_COLOR TEXT DEFAULT '',
+                $COLUMN_ACCENT_COLOR TEXT DEFAULT '',
+                $COLUMN_COLOR_NAME TEXT DEFAULT ''
             )
         """.trimIndent()
         db.execSQL(createAccessoriesQuery)
@@ -165,6 +173,21 @@ class AccessoryDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         } catch (_: Exception) {}
     }
 
+    private fun migrateVersion7(db: SQLiteDatabase) {
+        try {
+            db.execSQL("ALTER TABLE $TABLE_ACCESSORIES ADD COLUMN $COLUMN_CUTOUT_URI TEXT DEFAULT ''")
+        } catch (_: Exception) {}
+        try {
+            db.execSQL("ALTER TABLE $TABLE_ACCESSORIES ADD COLUMN $COLUMN_DOMINANT_COLOR TEXT DEFAULT ''")
+        } catch (_: Exception) {}
+        try {
+            db.execSQL("ALTER TABLE $TABLE_ACCESSORIES ADD COLUMN $COLUMN_ACCENT_COLOR TEXT DEFAULT ''")
+        } catch (_: Exception) {}
+        try {
+            db.execSQL("ALTER TABLE $TABLE_ACCESSORIES ADD COLUMN $COLUMN_COLOR_NAME TEXT DEFAULT ''")
+        } catch (_: Exception) {}
+    }
+
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
             createTripTables(db)
@@ -180,6 +203,9 @@ class AccessoryDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         }
         if (oldVersion < 6) {
             migrateVersion6(db)
+        }
+        if (oldVersion < 7) {
+            migrateVersion7(db)
         }
     }
 
@@ -226,6 +252,10 @@ class AccessoryDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
             put(COLUMN_STORE_URL, item.storeUrl)
             put(COLUMN_TIMES_WORN, item.timesWorn)
             put(COLUMN_LAST_WORN_DATE, item.lastWornDate)
+            put(COLUMN_CUTOUT_URI, item.cutoutUri)
+            put(COLUMN_DOMINANT_COLOR, item.dominantColorHex)
+            put(COLUMN_ACCENT_COLOR, item.accentColorHex)
+            put(COLUMN_COLOR_NAME, item.colorName)
         }
         return db.insert(TABLE_ACCESSORIES, null, values)
     }
@@ -255,6 +285,10 @@ class AccessoryDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
             put(COLUMN_STORE_URL, item.storeUrl)
             put(COLUMN_TIMES_WORN, item.timesWorn)
             put(COLUMN_LAST_WORN_DATE, item.lastWornDate)
+            put(COLUMN_CUTOUT_URI, item.cutoutUri)
+            put(COLUMN_DOMINANT_COLOR, item.dominantColorHex)
+            put(COLUMN_ACCENT_COLOR, item.accentColorHex)
+            put(COLUMN_COLOR_NAME, item.colorName)
         }
         val affected = db.update(TABLE_ACCESSORIES, values, "$COLUMN_ID = ?", arrayOf(item.id.toString()))
         return affected > 0
@@ -476,6 +510,18 @@ class AccessoryDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         val lastWornIdx = cursor.getColumnIndex(COLUMN_LAST_WORN_DATE)
         val lastWornDate = if (lastWornIdx != -1 && !cursor.isNull(lastWornIdx)) cursor.getLong(lastWornIdx) else 0L
 
+        val cutoutIdx = cursor.getColumnIndex(COLUMN_CUTOUT_URI)
+        val cutoutUri = if (cutoutIdx != -1 && !cursor.isNull(cutoutIdx)) cursor.getString(cutoutIdx) ?: "" else ""
+
+        val domColorIdx = cursor.getColumnIndex(COLUMN_DOMINANT_COLOR)
+        val dominantColorHex = if (domColorIdx != -1 && !cursor.isNull(domColorIdx)) cursor.getString(domColorIdx) ?: "" else ""
+
+        val accColorIdx = cursor.getColumnIndex(COLUMN_ACCENT_COLOR)
+        val accentColorHex = if (accColorIdx != -1 && !cursor.isNull(accColorIdx)) cursor.getString(accColorIdx) ?: "" else ""
+
+        val colorNameIdx = cursor.getColumnIndex(COLUMN_COLOR_NAME)
+        val colorName = if (colorNameIdx != -1 && !cursor.isNull(colorNameIdx)) cursor.getString(colorNameIdx) ?: "" else ""
+
         return AccessoryItem(
             id = id,
             title = title,
@@ -500,7 +546,11 @@ class AccessoryDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
             targetPrice = targetPrice,
             storeUrl = storeUrl,
             timesWorn = timesWorn,
-            lastWornDate = lastWornDate
+            lastWornDate = lastWornDate,
+            cutoutUri = cutoutUri,
+            dominantColorHex = dominantColorHex,
+            accentColorHex = accentColorHex,
+            colorName = colorName
         )
     }
 

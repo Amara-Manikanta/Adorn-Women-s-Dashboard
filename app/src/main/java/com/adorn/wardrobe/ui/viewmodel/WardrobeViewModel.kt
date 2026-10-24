@@ -133,7 +133,11 @@ class WardrobeViewModel(application: Application) : AndroidViewModel(application
         targetPrice: Double = 0.0,
         storeUrl: String = "",
         originalPrice: Double = 0.0,
-        timesWorn: Int = 0
+        timesWorn: Int = 0,
+        cutoutUri: String = "",
+        dominantColorHex: String = "",
+        accentColorHex: String = "",
+        colorName: String = ""
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val currentEdit = _uiState.value.itemBeingEdited
@@ -141,6 +145,10 @@ class WardrobeViewModel(application: Application) : AndroidViewModel(application
             val finalTargetPrice = if (targetPrice > 0.0) targetPrice else price
             val finalOriginalPrice = if (originalPrice > 0.0) originalPrice else (currentEdit?.originalPrice ?: 0.0)
             val finalTimesWorn = if (timesWorn >= 0 && (currentEdit == null || timesWorn != 0)) timesWorn else (currentEdit?.timesWorn ?: 0)
+            val finalCutout = if (cutoutUri.isNotBlank()) cutoutUri else (currentEdit?.cutoutUri ?: "")
+            val finalDomColor = if (dominantColorHex.isNotBlank()) dominantColorHex else (currentEdit?.dominantColorHex ?: "")
+            val finalAccColor = if (accentColorHex.isNotBlank()) accentColorHex else (currentEdit?.accentColorHex ?: "")
+            val finalColorName = if (colorName.isNotBlank()) colorName else (currentEdit?.colorName ?: "")
 
             // Cache any online images locally so they are never lost if link is removed
             val offlineUris = imageUris.map { uri ->
@@ -168,7 +176,11 @@ class WardrobeViewModel(application: Application) : AndroidViewModel(application
                     priority = priority,
                     targetPrice = finalTargetPrice,
                     storeUrl = if (storeUrl.isNotBlank()) storeUrl else currentEdit.storeUrl,
-                    timesWorn = finalTimesWorn
+                    timesWorn = finalTimesWorn,
+                    cutoutUri = finalCutout,
+                    dominantColorHex = finalDomColor,
+                    accentColorHex = finalAccColor,
+                    colorName = finalColorName
                 )
                 dbHelper.updateItem(updated)
             } else {
@@ -192,7 +204,11 @@ class WardrobeViewModel(application: Application) : AndroidViewModel(application
                     priority = priority,
                     targetPrice = finalTargetPrice,
                     storeUrl = storeUrl,
-                    timesWorn = finalTimesWorn
+                    timesWorn = finalTimesWorn,
+                    cutoutUri = finalCutout,
+                    dominantColorHex = finalDomColor,
+                    accentColorHex = finalAccColor,
+                    colorName = finalColorName
                 )
                 dbHelper.insertItem(newItem)
             }
@@ -696,5 +712,38 @@ class WardrobeViewModel(application: Application) : AndroidViewModel(application
         }
 
         _uiState.update { it.copy(filteredWishlistItems = list) }
+    }
+
+    // ==========================================
+    // ADORN BACKUP & RESTORE (.adorn)
+    // ==========================================
+
+    fun exportAdornBackup(context: android.content.Context, onReady: (java.io.File) -> Unit) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(statusMessage = "Compiling .adorn luxury vault archive...") }
+            try {
+                val file = com.adorn.wardrobe.data.local.AdornBackupHelper.createAdornBackup(context)
+                _uiState.update { it.copy(statusMessage = "Archive ready: ${file.name}") }
+                onReady(file)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _uiState.update { it.copy(statusMessage = "Backup failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun restoreAdornBackup(context: android.content.Context, backupUri: android.net.Uri) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(statusMessage = "Restoring from .adorn backup...") }
+            try {
+                val result = com.adorn.wardrobe.data.local.AdornBackupHelper.restoreAdornBackup(context, backupUri)
+                val refreshed = dbHelper.getAllItems()
+                updateItemsAndStats(refreshed)
+                _uiState.update { it.copy(statusMessage = result.message) }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _uiState.update { it.copy(statusMessage = "Restore failed: ${e.message}") }
+            }
+        }
     }
 }

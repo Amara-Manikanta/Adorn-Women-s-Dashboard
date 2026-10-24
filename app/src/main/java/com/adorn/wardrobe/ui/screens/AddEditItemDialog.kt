@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Language
@@ -110,7 +111,11 @@ fun AddEditItemDialog(
         imageUris: List<String>,
         storeUrl: String,
         originalPrice: Double,
-        timesWorn: Int
+        timesWorn: Int,
+        cutoutUri: String,
+        dominantColorHex: String,
+        accentColorHex: String,
+        colorName: String
     ) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -134,6 +139,13 @@ fun AddEditItemDialog(
     var isBrandDropdownExpanded by remember { mutableStateOf(false) }
     var storeUrl by remember { mutableStateOf(itemBeingEdited?.storeUrl ?: "") }
     var notes by remember { mutableStateOf(itemBeingEdited?.notes ?: "") }
+
+    // Google AI Edge LiteRT Background Removal & Color Analysis
+    var cutoutUri by remember { mutableStateOf(itemBeingEdited?.cutoutUri ?: "") }
+    var dominantColorHex by remember { mutableStateOf(itemBeingEdited?.dominantColorHex ?: "") }
+    var accentColorHex by remember { mutableStateOf(itemBeingEdited?.accentColorHex ?: "") }
+    var colorName by remember { mutableStateOf(itemBeingEdited?.colorName ?: "") }
+    var isSegmenting by remember { mutableStateOf(false) }
 
     // Multi-image list
     val imageList = remember {
@@ -512,6 +524,201 @@ fun AddEditItemDialog(
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                             color = Color(0xFF7B2CBF)
                         )
+                    }
+                }
+            }
+
+            // Google AI Edge LiteRT Background Removal Card
+            if (imageList.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFFFBF4F6),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE8D0D5)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = RoseGoldPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Google AI Edge LiteRT",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = Color(0xFF4A343F)
+                                )
+                            }
+
+                            if (cutoutUri.isNotBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFFE8F5E9)
+                                ) {
+                                    Text(
+                                        text = "Cutout Ready ✨",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = Color(0xFF2E7D32),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        if (cutoutUri.isNotBlank()) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFFEEEEEE))
+                                        .border(1.dp, Color(0xFFD6D6D6), RoundedCornerShape(12.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    AsyncImage(
+                                        model = cutoutUri,
+                                        contentDescription = "Cutout",
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier.fillMaxSize().padding(4.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    if (colorName.isNotBlank() || dominantColorHex.isNotBlank()) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (dominantColorHex.isNotBlank()) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(12.dp)
+                                                        .clip(CircleShape)
+                                                        .background(
+                                                            try {
+                                                                Color(android.graphics.Color.parseColor(dominantColorHex))
+                                                            } catch (e: Exception) { RoseGoldPrimary }
+                                                        )
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                            }
+                                            Text(
+                                                text = colorName.ifBlank { "Palette Analyzed" },
+                                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                                color = Color(0xFF381F2A)
+                                            )
+                                        }
+                                    }
+
+                                    Text(
+                                        text = "Transparent PNG saved in app storage",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF8C737E)
+                                    )
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            text = "Re-run Cutout",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                            color = RoseGoldPrimary,
+                                            modifier = Modifier.clickable {
+                                                coroutineScope.launch {
+                                                    isSegmenting = true
+                                                    try {
+                                                        val res = com.adorn.wardrobe.ml.LiteRtSegmenter.removeBackgroundAndExtractColors(
+                                                            context,
+                                                            imageList.first()
+                                                        )
+                                                        cutoutUri = res.cutoutPath
+                                                        dominantColorHex = res.dominantColorHex
+                                                        accentColorHex = res.accentColorHex
+                                                        colorName = res.colorName
+                                                        android.widget.Toast.makeText(context, "Cutout & Palette Generated! ✨", android.widget.Toast.LENGTH_SHORT).show()
+                                                    } catch (e: Exception) {
+                                                        android.widget.Toast.makeText(context, "Cutout failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                                    } finally {
+                                                        isSegmenting = false
+                                                    }
+                                                }
+                                            }
+                                        )
+
+                                        Text(
+                                            text = "Clear Cutout",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.Gray,
+                                            modifier = Modifier.clickable {
+                                                cutoutUri = ""
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "Isolate garment with alpha transparency and extract color palette on-device with LiteRT.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF67525D)
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Button(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        isSegmenting = true
+                                        try {
+                                            val res = com.adorn.wardrobe.ml.LiteRtSegmenter.removeBackgroundAndExtractColors(
+                                                context,
+                                                imageList.first()
+                                            )
+                                            cutoutUri = res.cutoutPath
+                                            dominantColorHex = res.dominantColorHex
+                                            accentColorHex = res.accentColorHex
+                                            colorName = res.colorName
+                                            android.widget.Toast.makeText(context, "Cutout & ${res.colorName} extracted! ✨", android.widget.Toast.LENGTH_SHORT).show()
+                                        } catch (e: Exception) {
+                                            android.widget.Toast.makeText(context, "Segmentation failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                        } finally {
+                                            isSegmenting = false
+                                        }
+                                    }
+                                },
+                                enabled = !isSegmenting,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = RoseGoldPrimary),
+                                modifier = Modifier.fillMaxWidth().height(42.dp)
+                            ) {
+                                if (isSegmenting) {
+                                    CircularProgressIndicator(
+                                        color = Color.White,
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Processing on-device with LiteRT...", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                                } else {
+                                    Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Isolate Garment / Remove Background ✨", color = Color.White, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1209,7 +1416,11 @@ fun AddEditItemDialog(
                         imageList.toList(),
                         storeUrl.trim(),
                         origPriceVal,
-                        timesWornVal
+                        timesWornVal,
+                        cutoutUri,
+                        dominantColorHex,
+                        accentColorHex,
+                        colorName
                     )
                 },
                 shape = RoundedCornerShape(16.dp),

@@ -3,7 +3,9 @@ package com.adorn.wardrobe
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -56,6 +58,15 @@ class MainActivity : ComponentActivity() {
                 val detailSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
                 val addEditSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+                // Document Picker Launcher for restoring .adorn backups
+                val openDocumentLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument()
+                ) { uri ->
+                    if (uri != null) {
+                        viewModel.restoreAdornBackup(context, uri)
+                    }
+                }
+
                 // Show status toast notification
                 LaunchedEffect(uiState.statusMessage) {
                     uiState.statusMessage?.let { msg ->
@@ -90,6 +101,14 @@ class MainActivity : ComponentActivity() {
                                 onSelectToggle = { viewModel.toggleItemSelected(it.id) },
                                 onDeleteSelected = { viewModel.deleteSelected() },
                                 onRemoveDuplicates = { viewModel.removeDuplicates() },
+                                onExportBackup = {
+                                    viewModel.exportAdornBackup(context) { file ->
+                                        com.adorn.wardrobe.data.local.AdornBackupHelper.shareBackupFile(context, file)
+                                    }
+                                },
+                                onRestoreBackup = {
+                                    openDocumentLauncher.launch(arrayOf("*/*"))
+                                },
                                 modifier = Modifier.padding(innerPadding)
                             )
                         }
@@ -109,6 +128,14 @@ class MainActivity : ComponentActivity() {
                                 onDeleteSelected = { viewModel.deleteSelected() },
                                 onMoveSelectedToWardrobe = { viewModel.moveSelectedWishlistToWardrobe() },
                                 onRemoveDuplicates = { viewModel.removeDuplicates() },
+                                onExportBackup = {
+                                    viewModel.exportAdornBackup(context) { file ->
+                                        com.adorn.wardrobe.data.local.AdornBackupHelper.shareBackupFile(context, file)
+                                    }
+                                },
+                                onRestoreBackup = {
+                                    openDocumentLauncher.launch(arrayOf("*/*"))
+                                },
                                 modifier = Modifier.padding(innerPadding)
                             )
                         }
@@ -184,12 +211,16 @@ class MainActivity : ComponentActivity() {
                             itemBeingEdited = uiState.itemBeingEdited,
                             sheetState = addEditSheetState,
                             onDismiss = { viewModel.closeAddEditDialog() },
-                            onSave = { title, cat, metal, purity, price, weight, dimensions, isSet, setIncludes, occ, loc, brand, notes, imgUris, storeUrl, origPrice, timesWorn ->
+                            onSave = { title, cat, metal, purity, price, weight, dimensions, isSet, setIncludes, occ, loc, brand, notes, imgUris, storeUrl, origPrice, timesWorn, cutoutUri, domColor, accColor, colName ->
                                 viewModel.saveItem(
                                     title, cat, metal, purity, price, weight, dimensions, isSet, setIncludes, occ, loc, brand, notes, imgUris,
                                     storeUrl = storeUrl,
                                     originalPrice = origPrice,
-                                    timesWorn = timesWorn
+                                    timesWorn = timesWorn,
+                                    cutoutUri = cutoutUri,
+                                    dominantColorHex = domColor,
+                                    accentColorHex = accColor,
+                                    colorName = colName
                                 )
                             }
                         )

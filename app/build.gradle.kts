@@ -71,6 +71,13 @@ dependencies {
     // Google Play Code Scanner (Camera Barcode & QR Scanner)
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 
+    // Google AI Edge LiteRT (On-Device ML Runtime)
+    implementation("com.google.ai.edge.litert:litert:1.0.1")
+    implementation("com.google.ai.edge.litert:litert-support:1.0.1")
+
+    // AndroidX Palette (Local Color Analysis)
+    implementation("androidx.palette:palette-ktx:1.0.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
