@@ -75,6 +75,10 @@ dependencies {
     implementation("com.google.ai.edge.litert:litert:1.0.1")
     implementation("com.google.ai.edge.litert:litert-support:1.0.1")
 
+    // Google ML Kit On-Device Segmentation & Face Detection (Bundled local models)
+    implementation("com.google.mlkit:segmentation-selfie:16.0.0-beta6")
+    implementation("com.google.mlkit:face-detection:16.1.7")
+
     // AndroidX Palette (Local Color Analysis)
     implementation("androidx.palette:palette-ktx:1.0.0")
 

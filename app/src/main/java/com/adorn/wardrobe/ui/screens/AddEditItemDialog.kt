@@ -55,6 +55,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
@@ -146,6 +148,8 @@ fun AddEditItemDialog(
     var accentColorHex by remember { mutableStateOf(itemBeingEdited?.accentColorHex ?: "") }
     var colorName by remember { mutableStateOf(itemBeingEdited?.colorName ?: "") }
     var isSegmenting by remember { mutableStateOf(false) }
+    var removeModelFace by remember { mutableStateOf(true) }
+    var removeBareArms by remember { mutableStateOf(true) }
 
     // Multi-image list
     val imageList = remember {
@@ -576,6 +580,49 @@ fun AddEditItemDialog(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        // Face & Arm removal toggles
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Remove Model Head & Face",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                color = Color(0xFF381F2A)
+                            )
+                            Switch(
+                                checked = removeModelFace,
+                                onCheckedChange = { removeModelFace = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = RoseGoldPrimary
+                                )
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Remove Bare Arms & Skin",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                color = Color(0xFF381F2A)
+                            )
+                            Switch(
+                                checked = removeBareArms,
+                                onCheckedChange = { removeBareArms = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = RoseGoldPrimary
+                                )
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
                         if (cutoutUri.isNotBlank()) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -642,7 +689,9 @@ fun AddEditItemDialog(
                                                     try {
                                                         val res = com.adorn.wardrobe.ml.LiteRtSegmenter.removeBackgroundAndExtractColors(
                                                             context,
-                                                            imageList.first()
+                                                            imageList.first(),
+                                                            removeFace = removeModelFace,
+                                                            removeArms = removeBareArms
                                                         )
                                                         cutoutUri = res.cutoutPath
                                                         dominantColorHex = res.dominantColorHex
@@ -685,7 +734,9 @@ fun AddEditItemDialog(
                                         try {
                                             val res = com.adorn.wardrobe.ml.LiteRtSegmenter.removeBackgroundAndExtractColors(
                                                 context,
-                                                imageList.first()
+                                                imageList.first(),
+                                                removeFace = removeModelFace,
+                                                removeArms = removeBareArms
                                             )
                                             cutoutUri = res.cutoutPath
                                             dominantColorHex = res.dominantColorHex

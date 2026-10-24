@@ -6,23 +6,23 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.net.Uri
 import androidx.palette.graphics.Palette
+import com.google.android.gms.tasks.Tasks
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceDetectorOptions
+import com.google.mlkit.vision.segmentation.Segmentation
+import com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.tensorflow.lite.Interpreter
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.channels.FileChannel
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sqrt
 
 data class SegmentationResult(
     val cutoutPath: String,
@@ -35,78 +35,41 @@ data class SegmentationResult(
 object LiteRtSegmenter {
 
     private const val CUTOUT_DIR_NAME = "wardrobe_cutouts"
-    private const val MODEL_INPUT_SIZE = 256
-
-    private var liteRtInterpreter: Interpreter? = null
-    private var isModelLoaded = false
 
     /**
-     * Initializes LiteRT Interpreter if an on-device .tflite model exists in assets or cache.
-     */
-    fun initLiteRt(context: Context) {
-        if (isModelLoaded) return
-        try {
-            val assetManager = context.assets
-            val modelName = "segmenter.tflite"
-            val hasAsset = try {
-                assetManager.list("")?.contains(modelName) == true
-            } catch (e: Exception) {
-                false
-            }
-
-            if (hasAsset) {
-                val fd = assetManager.openFd(modelName)
-                val inputStream = FileInputStream(fd.fileDescriptor)
-                val fileChannel = inputStream.channel
-                val startOffset = fd.startOffset
-                val declaredLength = fd.declaredLength
-                val modelBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
-
-                val options = Interpreter.Options().apply {
-                    setNumThreads(4)
-                }
-                liteRtInterpreter = Interpreter(modelBuffer, options)
-                isModelLoaded = true
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            // Fall back gracefully to built-in salient object segmentation engine
-            isModelLoaded = false
-        }
-    }
-
-    /**
-     * Executes On-Device Background Removal and Color Extraction without any cloud APIs.
-     * Takes an image URI/path, creates a clean cutout PNG with alpha transparency,
-     * extracts dominant colors via AndroidX Palette, and saves the file to app-private storage.
+     * Executes On-Device Background Removal and Color Extraction without cloud APIs.
+     * Uses Google AI Edge LiteRT / ML Kit on-device segmentation model to cleanly isolate dresses,
+     * sarees, lehengas, and jewelry from complex backgrounds (resorts, pools, grass, rooms),
+     * with options to remove model face/head and bare arms.
      */
     suspend fun removeBackgroundAndExtractColors(
         context: Context,
-        inputUriOrPath: String
+        inputUriOrPath: String,
+        removeFace: Boolean = true,
+        removeArms: Boolean = true
     ): SegmentationResult = withContext(Dispatchers.Default) {
-        initLiteRt(context)
 
         // 1. Load Original Bitmap
         val originalBitmap = loadBitmap(context, inputUriOrPath)
             ?: throw IllegalArgumentException("Unable to decode input bitmap from: $inputUriOrPath")
 
-        // Ensure original is saved in internal storage
         val originalPath = saveOriginalIfExternal(context, inputUriOrPath, originalBitmap)
 
-        // 2. Perform On-Device Segmentation Mask Generation
-        val maskBitmap = if (liteRtInterpreter != null) {
-            runLiteRtInference(originalBitmap)
-        } else {
-            runSalientObjectSegmentation(originalBitmap)
+        // 2. Perform Google On-Device Subject / Person Segmentation
+        val maskBitmap = runMlKitSegmentation(originalBitmap)
+
+        // 3. Apply Alpha Mask using PorterDuff DST_IN
+        var cutoutBitmap = applyAlphaMask(originalBitmap, maskBitmap)
+
+        // 4. Remove Face, Head & Neck, and Bare Arms if requested
+        if (removeFace || removeArms) {
+            cutoutBitmap = removeModelFaceAndSkin(originalBitmap, cutoutBitmap, removeFace, removeArms)
         }
 
-        // 3. Apply Alpha Mask using Android Bitmap PorterDuff APIs
-        val cutoutBitmap = applyAlphaMask(originalBitmap, maskBitmap)
-
-        // 4. Extract Dominant & Accent Colors using AndroidX Palette
+        // 5. Extract Dominant & Accent Colors from pure clothing pixels
         val colorAnalysis = extractColorsFromCutout(cutoutBitmap)
 
-        // 5. Save Lossless Cutout PNG into App-Private Storage
+        // 6. Save Lossless Cutout PNG into App-Private Storage
         val cutoutsDir = File(context.filesDir, CUTOUT_DIR_NAME).apply {
             if (!exists()) mkdirs()
         }
@@ -126,146 +89,147 @@ object LiteRtSegmenter {
         )
     }
 
-    private fun runLiteRtInference(original: Bitmap): Bitmap {
-        val interpreter = liteRtInterpreter ?: return runSalientObjectSegmentation(original)
+    private fun runMlKitSegmentation(original: Bitmap): Bitmap {
+        return try {
+            val options = SelfieSegmenterOptions.Builder()
+                .setDetectorMode(SelfieSegmenterOptions.SINGLE_IMAGE_MODE)
+                .enableRawSizeMask()
+                .build()
+            val segmenter = Segmentation.getClient(options)
+            val inputImage = InputImage.fromBitmap(original, 0)
 
-        val scaled = Bitmap.createScaledBitmap(original, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE, true)
-        val inputBuffer = ByteBuffer.allocateDirect(1 * MODEL_INPUT_SIZE * MODEL_INPUT_SIZE * 3 * 4).apply {
-            order(ByteOrder.nativeOrder())
-        }
+            val segmentationMask = Tasks.await(segmenter.process(inputImage))
+            val maskBuffer = segmentationMask.buffer
+            val maskWidth = segmentationMask.width
+            val maskHeight = segmentationMask.height
 
-        val intValues = IntArray(MODEL_INPUT_SIZE * MODEL_INPUT_SIZE)
-        scaled.getPixels(intValues, 0, MODEL_INPUT_SIZE, 0, 0, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE)
+            val maskBitmap = Bitmap.createBitmap(maskWidth, maskHeight, Bitmap.Config.ARGB_8888)
+            val maskPixels = IntArray(maskWidth * maskHeight)
 
-        for (pixel in intValues) {
-            val r = (pixel shr 16 and 0xFF) / 255.0f
-            val g = (pixel shr 8 and 0xFF) / 255.0f
-            val b = (pixel and 0xFF) / 255.0f
-            inputBuffer.putFloat(r)
-            inputBuffer.putFloat(g)
-            inputBuffer.putFloat(b)
-        }
-
-        val outputBuffer = ByteBuffer.allocateDirect(1 * MODEL_INPUT_SIZE * MODEL_INPUT_SIZE * 2 * 4).apply {
-            order(ByteOrder.nativeOrder())
-        }
-
-        interpreter.run(inputBuffer, outputBuffer)
-        outputBuffer.rewind()
-
-        val maskBitmap = Bitmap.createBitmap(MODEL_INPUT_SIZE, MODEL_INPUT_SIZE, Bitmap.Config.ARGB_8888)
-        val maskPixels = IntArray(MODEL_INPUT_SIZE * MODEL_INPUT_SIZE)
-
-        for (i in 0 until MODEL_INPUT_SIZE * MODEL_INPUT_SIZE) {
-            val bgProb = outputBuffer.float
-            val fgProb = outputBuffer.float
-            val alpha = if (fgProb > bgProb) {
-                ((fgProb / (fgProb + bgProb)) * 255).toInt().coerceIn(0, 255)
-            } else {
-                0
+            maskBuffer.rewind()
+            for (i in 0 until maskWidth * maskHeight) {
+                val confidence = maskBuffer.float
+                val alpha = when {
+                    confidence >= 0.70f -> 255
+                    confidence <= 0.30f -> 0
+                    else -> (((confidence - 0.30f) / 0.40f) * 255).toInt().coerceIn(0, 255)
+                }
+                maskPixels[i] = Color.argb(alpha, 255, 255, 255)
             }
-            maskPixels[i] = Color.argb(alpha, 255, 255, 255)
-        }
-        maskBitmap.setPixels(maskPixels, 0, MODEL_INPUT_SIZE, 0, 0, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE)
+            maskBitmap.setPixels(maskPixels, 0, maskWidth, 0, 0, maskWidth, maskHeight)
 
-        return Bitmap.createScaledBitmap(maskBitmap, original.width, original.height, true)
+            segmenter.close()
+
+            if (maskWidth != original.width || maskHeight != original.height) {
+                Bitmap.createScaledBitmap(maskBitmap, original.width, original.height, true)
+            } else {
+                maskBitmap
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // Fallback: return full white mask if error
+            Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888).apply {
+                eraseColor(Color.WHITE)
+            }
+        }
     }
 
-    /**
-     * High-precision on-device salient object segmentation engine.
-     * Evaluates boundary color variance, peripheral luminance, and chromatic contrast
-     * to cleanly separate jewelry, apparel, shoes, and handbags from backgrounds.
-     */
-    private fun runSalientObjectSegmentation(original: Bitmap): Bitmap {
-        val width = original.width
-        val height = original.height
+    private fun removeModelFaceAndSkin(
+        original: Bitmap,
+        cutout: Bitmap,
+        removeFace: Boolean,
+        removeArms: Boolean
+    ): Bitmap {
+        val width = cutout.width
+        val height = cutout.height
 
-        val scaledW = 384
-        val scaledH = (height.toFloat() / width.toFloat() * scaledW).toInt().coerceAtLeast(64)
-        val sample = Bitmap.createScaledBitmap(original, scaledW, scaledH, true)
+        val mutableCutout = cutout.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(mutableCutout)
 
-        val pixels = IntArray(scaledW * scaledH)
-        sample.getPixels(pixels, 0, scaledW, 0, 0, scaledW, scaledH)
+        var lowestCollarY = height.toFloat()
 
-        // Sample boundary pixels (corners and edges) to accurately model background distribution
-        val bgColors = mutableListOf<Int>()
-        val borderWidth = 12
-        for (x in 0 until scaledW) {
-            for (y in 0 until borderWidth) {
-                bgColors.add(pixels[y * scaledW + x])
-                bgColors.add(pixels[(scaledH - 1 - y) * scaledW + x])
-            }
-        }
-        for (y in 0 until scaledH) {
-            for (x in 0 until borderWidth) {
-                bgColors.add(pixels[y * scaledW + x])
-                bgColors.add(pixels[y * scaledW + (scaledW - 1 - x)])
-            }
-        }
+        // 1. Detect faces using on-device ML Kit Face Detection
+        if (removeFace) {
+            try {
+                val detectorOptions = FaceDetectorOptions.Builder()
+                    .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+                    .build()
+                val detector = FaceDetection.getClient(detectorOptions)
+                val inputImage = InputImage.fromBitmap(original, 0)
+                val faces = Tasks.await(detector.process(inputImage))
 
-        var avgR = 0.0
-        var avgG = 0.0
-        var avgB = 0.0
-        for (c in bgColors) {
-            avgR += Color.red(c)
-            avgG += Color.green(c)
-            avgB += Color.blue(c)
-        }
-        val count = bgColors.size.toDouble().coerceAtLeast(1.0)
-        avgR /= count
-        avgG /= count
-        avgB /= count
-
-        val maskPixels = IntArray(scaledW * scaledH)
-        val centerX = scaledW / 2.0
-        val centerY = scaledH / 2.0
-        val maxDist = sqrt(centerX * centerX + centerY * centerY)
-
-        for (y in 0 until scaledH) {
-            for (x in 0 until scaledW) {
-                val idx = y * scaledW + x
-                val p = pixels[idx]
-                val pr = Color.red(p)
-                val pg = Color.green(p)
-                val pb = Color.blue(p)
-
-                val diffR = pr - avgR
-                val diffG = pg - avgG
-                val diffB = pb - avgB
-                val colorDistance = sqrt(diffR * diffR + diffG * diffG + diffB * diffB)
-
-                // Distance from center prior (objects tend to be centered)
-                val distFromCenter = sqrt((x - centerX) * (x - centerX) + (y - centerY) * (y - centerY))
-                val centerWeight = 1.0 - (distFromCenter / maxDist).coerceIn(0.0, 1.0) * 0.4
-
-                val threshold = 38.0
-                val transition = 24.0
-
-                val alpha = when {
-                    colorDistance > (threshold + transition) -> 255
-                    colorDistance < threshold -> {
-                        // Near background color, suppress
-                        0
-                    }
-                    else -> {
-                        val ratio = (colorDistance - threshold) / transition
-                        (ratio * 255 * centerWeight).toInt().coerceIn(0, 255)
-                    }
+                val clearPaint = Paint().apply {
+                    xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+                    isAntiAlias = true
                 }
 
-                maskPixels[idx] = Color.argb(alpha, 255, 255, 255)
+                for (face in faces) {
+                    val box = face.boundingBox
+                    val faceW = box.width().toFloat()
+                    val faceH = box.height().toFloat()
+                    val chinY = box.bottom.toFloat()
+                    val centerX = box.centerX().toFloat()
+
+                    // Collar cutoff stops right under chin to keep blouse/neckline/collar intact
+                    val collarY = (chinY + faceH * 0.08f).coerceAtMost(height.toFloat())
+                    lowestCollarY = min(lowestCollarY, collarY)
+
+                    val headHalfW = max(faceW * 0.95f, 25f)
+                    val neckHalfW = max(faceW * 0.28f, 10f)
+
+                    val path = Path().apply {
+                        moveTo(centerX - neckHalfW, collarY)
+                        quadTo(centerX, collarY + faceH * 0.04f, centerX + neckHalfW, collarY)
+                        lineTo(min(width.toFloat(), centerX + headHalfW), chinY - faceH * 0.35f)
+                        lineTo(min(width.toFloat(), centerX + headHalfW), 0f)
+                        lineTo(max(0f, centerX - headHalfW), 0f)
+                        lineTo(max(0f, centerX - headHalfW), chinY - faceH * 0.35f)
+                        close()
+                    }
+
+                    canvas.drawPath(path, clearPaint)
+                }
+                detector.close()
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
 
-        val lowResMask = Bitmap.createBitmap(scaledW, scaledH, Bitmap.Config.ARGB_8888)
-        lowResMask.setPixels(maskPixels, 0, scaledW, 0, 0, scaledW, scaledH)
+        // 2. Remove bare arms and exposed lateral skin
+        if (removeArms) {
+            val pixels = IntArray(width * height)
+            mutableCutout.getPixels(pixels, 0, width, 0, 0, width, height)
 
-        return Bitmap.createScaledBitmap(lowResMask, width, height, true)
+            val leftArmBound = (width * 0.36f).toInt()
+            val rightArmBound = (width * 0.64f).toInt()
+
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    val idx = y * width + x
+                    val pixel = pixels[idx]
+                    val a = Color.alpha(pixel)
+                    if (a > 40) {
+                        val r = Color.red(pixel)
+                        val g = Color.green(pixel)
+                        val b = Color.blue(pixel)
+
+                        val cb = 128.0 - 0.168736 * r - 0.331264 * g + 0.5 * b
+                        val cr = 128.0 + 0.5 * r - 0.418688 * g - 0.081312 * b
+
+                        val isSkin = cb in 75.0..135.0 && cr in 130.0..180.0 && r > g && g > b && (r - g) >= 8
+
+                        if (isSkin && (x < leftArmBound || x > rightArmBound || y < lowestCollarY)) {
+                            pixels[idx] = 0 // Transparent!
+                        }
+                    }
+                }
+            }
+            mutableCutout.setPixels(pixels, 0, width, 0, 0, width, height)
+        }
+
+        return mutableCutout
     }
 
-    /**
-     * Applies the alpha mask to the original image using DST_IN PorterDuff compositing.
-     */
     private fun applyAlphaMask(original: Bitmap, mask: Bitmap): Bitmap {
         val result = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(result)
@@ -334,8 +298,8 @@ object LiteRtSegmenter {
 
         return when (hue) {
             in 0.0..15.0, in 345.0..360.0 -> if (value > 0.65f) "Crimson Red" else "Deep Maroon"
-            in 15.0..45.0 -> if (value > 0.7f) "Amber Gold" else "Copper Tan"
-            in 45.0..68.0 -> "Canary Gold"
+            in 15.0..45.0 -> if (value > 0.7f) "Champagne Gold" else "Copper Tan"
+            in 45.0..68.0 -> "Royal Gold"
             in 68.0..160.0 -> if (value > 0.6f) "Emerald Green" else "Olive Forest"
             in 160.0..200.0 -> "Teal Peacock"
             in 200.0..260.0 -> if (value > 0.6f) "Sapphire Blue" else "Midnight Navy"
